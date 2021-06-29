@@ -5,6 +5,7 @@ use std::{
     str::from_utf8,
 };
 
+use proc_macro2::Span;
 use quote::quote;
 
 fn create_lib_folder_if_not_exist() {
@@ -46,35 +47,44 @@ fn create_cargo_toml() {
 }
 
 fn create_src() {
+    let r#type = syn::Ident::new("MyPluginService", Span::mixed_site());
+    let insert_code = quote! {
+        #[test]
+        fn test_sth() {
+            println!("just test.")
+        }
+    };
     let mut code_quote = quote! {
         use my_interface::SayHelloService;
 
         #[no_mangle]
         pub fn new_service() -> Box<dyn SayHelloService> {
-            Box::new(PluginSayHello::new())
+            Box::new(#r#type::new())
         }
 
-        pub struct PluginSayHello {
+        pub struct #r#type {
             id: String,
         }
 
-        impl PluginSayHello {
-            fn new() -> PluginSayHello {
+        impl #r#type {
+            fn new() -> #r#type {
                 let id = format!("{:08x}", rand::random::<u32>());
                 println!("[{}] Created instance!", id);
-                PluginSayHello { id }
+                #r#type { id }
             }
         }
 
-        impl SayHelloService for PluginSayHello {
+        impl SayHelloService for #r#type {
             fn say_hello(&self) {
                 println!("[{}] Hello from plugin!", self.id);
             }
         }
+
+        #insert_code
     };
     code_quote.extend(
         quote! {
-            impl Drop for PluginSayHello {
+            impl Drop for #r#type {
                 fn drop(&mut self) {
                     println!("[{}] Destroyed instance!", self.id);
                 }
