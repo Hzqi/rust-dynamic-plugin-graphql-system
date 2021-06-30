@@ -75,6 +75,7 @@ pub struct Bar {
 
 #[derive(Default, Clone)]
 pub struct DataContext {
+    flag: bool,
     foo_storage: HashMap<i32, Foo>,
     bar_storage: HashMap<i32, Bar>,
 }
@@ -88,9 +89,13 @@ impl DataContext {
         let mut bar_storage = HashMap::new();
         Self::init_bar(&mut bar_storage);
         Self {
+            flag: false,
             foo_storage: foo_storage,
             bar_storage: bar_storage,
         }
+    }
+    pub fn flag(&mut self, f: bool) {
+        self.flag = f;
     }
     fn init_foo(storage: &mut HashMap<i32, Foo>) {
         storage.insert(
@@ -139,7 +144,16 @@ pub struct BarQuery {}
 impl FooQuery {
     #[graphql(description = "get all foos")]
     fn foos(context: &DataContext) -> Vec<&Foo> {
-        context.foo_storage.values().into_iter().collect()
+        if context.flag {
+            context
+                .foo_storage
+                .values()
+                .into_iter()
+                .filter(|v| v.id < 2)
+                .collect()
+        } else {
+            context.foo_storage.values().into_iter().collect()
+        }
     }
 }
 
@@ -159,7 +173,16 @@ impl FooMutation {
 impl BarQuery {
     #[graphql(description = "get all bars")]
     fn bars(context: &DataContext) -> Vec<&Bar> {
-        context.bar_storage.values().into_iter().collect()
+        if context.flag {
+            context
+                .bar_storage
+                .values()
+                .into_iter()
+                .filter(|v| v.id < 2)
+                .collect()
+        } else {
+            context.bar_storage.values().into_iter().collect()
+        }
     }
 }
 

@@ -54,51 +54,60 @@ async fn contro_context_handle(
 
 async fn graphql_get_handler(
     key: String,
+    flag: bool,
     context: StateContext,
     data_context: DataContext,
     qry: HashMap<String, String>,
 ) -> Result<impl Reply, Rejection> {
     let guard = context.lock().await;
+    let mut dc = data_context;
+    dc.flag(flag);
     match guard.get_handler(key) {
-        Some(handler) => handler.get_request_handle(data_context, qry).await,
+        Some(handler) => handler.get_request_handle(dc, qry).await,
         None => Err(warp::reject::custom(Error::HandlerNotFound)),
     }
 }
 
 async fn graphql_post_json_handler(
     key: String,
+    flag: bool,
     context: StateContext,
     data_context: DataContext,
     req: GraphQLBatchRequest<DefaultScalarValue>,
 ) -> Result<impl Reply, Rejection> {
     let guard = context.lock().await;
+    let mut dc = data_context;
+    dc.flag(flag);
     match guard.get_handler(key) {
-        Some(handler) => handler.post_json_request_handle(data_context, req).await,
+        Some(handler) => handler.post_json_request_handle(dc, req).await,
         None => Err(warp::reject::custom(Error::HandlerNotFound)),
     }
 }
 
 async fn graphql_post_graphql_handler(
     key: String,
+    flag: bool,
     context: StateContext,
     data_context: DataContext,
     body: Bytes,
 ) -> Result<impl Reply, Rejection> {
     let guard = context.lock().await;
+    let mut dc = data_context;
+    dc.flag(flag);
     match guard.get_handler(key) {
-        Some(handler) => {
-            handler
-                .post_grqphql_request_handle(data_context, body)
-                .await
-        }
+        Some(handler) => handler.post_grqphql_request_handle(dc, body).await,
         None => Err(warp::reject::custom(Error::HandlerNotFound)),
     }
 }
 
-async fn graphiql_handler(key: String, context: StateContext) -> Result<impl Reply, Rejection> {
+async fn graphiql_handler(
+    key: String,
+    flag: bool,
+    context: StateContext,
+) -> Result<impl Reply, Rejection> {
     let guard = context.lock().await;
     if guard.has_handler(key.clone()) {
-        let graphql_url = format!("/api/{}/graphql", key);
+        let graphql_url = format!("/api/{}/graphql/{}", key, flag);
         let html_body =
             juniper::http::graphiql::graphiql_source(graphql_url.as_str(), None).into_bytes();
         let html = http::Response::builder()
@@ -126,28 +135,28 @@ pub async fn run() {
         .and(with_context(ctx.clone()))
         .and_then(contro_context_handle);
 
-    let graphql_get_route = warp::path!("api" / String / "graphql")
+    let graphql_get_route = warp::path!("api" / String / "graphql" / bool)
         .and(warp::get())
         .and(with_context(ctx.clone()))
         .and(data_context_extractor())
         .and(query::query())
         .and_then(graphql_get_handler);
 
-    let graphql_post_json_route = warp::path!("api" / String / "graphql")
+    let graphql_post_json_route = warp::path!("api" / String / "graphql" / bool)
         .and(warp::post())
         .and(with_context(ctx.clone()))
         .and(data_context_extractor())
         .and(body::json())
         .and_then(graphql_post_json_handler);
 
-    let graphql_post_graphql_route = warp::path!("api" / String / "graphql")
+    let graphql_post_graphql_route = warp::path!("api" / String / "graphql" / bool)
         .and(warp::post())
         .and(with_context(ctx.clone()))
         .and(data_context_extractor())
         .and(body::bytes())
         .and_then(graphql_post_graphql_handler);
 
-    let graphiql_route = warp::path!("api" / String / "graphiql")
+    let graphiql_route = warp::path!("api" / String / "graphiql" / bool)
         .and(warp::get())
         .and(with_context(ctx.clone()))
         .and_then(graphiql_handler);
