@@ -7,3 +7,10 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+bytes = "0.5.6"
+dyn-clone = "1.0.4"
+juniper = {version = "0.15.6", features = ["expose-test-schema"]}
+juniper_warp = "0.6.4"
+warp = "0.2"

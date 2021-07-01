@@ -800,6 +800,15 @@ dependencies = [
 [[package]]
 name = "my-interface"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes 0.5.6",
+ "dyn-clone",
+ "juniper",
+ "juniper_warp",
+ "warp",
+]
 
 [[package]]
 name = "my-master"
@@ -828,6 +837,8 @@ dependencies = [
 name = "my-plugin-builder"
 version = "0.1.0"
 dependencies = [
+ "log",
+ "my-interface",
  "proc-macro2",
  "quote",
  "syn",

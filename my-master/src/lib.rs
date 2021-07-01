@@ -1,64 +1,25 @@
-use async_trait::async_trait;
-use bytes::Bytes;
-use dyn_clone::{clone_trait_object, DynClone};
-use implement::DataContext;
-use juniper::{http::GraphQLBatchRequest, DefaultScalarValue};
 use log::error;
+use my_interface::GraphqlRequestHandler;
+use my_plugin_builder::errors::BuildError;
 use std::{collections::HashMap, convert::Infallible};
-use tokio::task;
-use warp::{
-    http::{self, StatusCode},
-    Rejection,
-};
+use warp::{http::StatusCode, Rejection};
 
-pub mod implement;
 pub mod route;
-
-/// 请求处理器的特型
-#[async_trait]
-pub trait GraphqlRequestHandler: DynClone {
-    fn id(&self) -> String;
-    async fn get_request_handle(
-        &self,
-        context: DataContext,
-        qry: HashMap<String, String>,
-    ) -> Result<http::Response<Vec<u8>>, Rejection>;
-    async fn post_json_request_handle(
-        &self,
-        context: DataContext,
-        req: GraphQLBatchRequest<DefaultScalarValue>,
-    ) -> Result<http::Response<Vec<u8>>, Rejection>;
-    async fn post_grqphql_request_handle(
-        &self,
-        context: DataContext,
-        body: Bytes,
-    ) -> Result<http::Response<Vec<u8>>, Rejection>;
-}
-clone_trait_object!(GraphqlRequestHandler);
-
-#[derive(Debug)]
-pub struct JoinError(task::JoinError);
-
-impl warp::reject::Reject for JoinError {}
-
-fn build_response(response: Result<(Vec<u8>, bool), anyhow::Error>) -> http::Response<Vec<u8>> {
-    match response {
-        Ok((body, is_ok)) => http::Response::builder()
-            .status(if is_ok { 200 } else { 400 })
-            .header("content-type", "application/json")
-            .body(body)
-            .expect("response is valid"),
-        Err(_) => http::Response::builder()
-            .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Vec::new())
-            .expect("status code is valid"),
-    }
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("handler not found")]
     HandlerNotFound,
+    #[error("demo not support")]
+    DemoNotSupport,
+    #[error("load lib error")]
+    LoadLibError,
+    #[error("load plugin error")]
+    LoadPluginError,
+    #[error("no such plugin error")]
+    NoSuchPluginError,
+    #[error(transparent)]
+    BuildError(#[from] BuildError),
 }
 
 impl warp::reject::Reject for Error {}
@@ -69,6 +30,20 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl warp::
     } else if let Some(err) = err.find::<Error>() {
         match err {
             Error::HandlerNotFound => (StatusCode::NOT_FOUND, "handler not found".to_string()),
+            Error::DemoNotSupport => (StatusCode::BAD_REQUEST, "demo not support".to_string()),
+            Error::LoadPluginError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "load plugin error".to_string(),
+            ),
+            Error::LoadLibError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "load lib error".to_string(),
+            ),
+            Error::NoSuchPluginError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "no such plugin error".to_string(),
+            ),
+            Error::BuildError(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", e)),
         }
     } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         (
@@ -84,4 +59,35 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl warp::
     };
 
     Ok(warp::reply::with_status(message, code))
+}
+
+/// 处理器的存储容器
+#[derive(Clone)]
+pub struct HandlerStorage {
+    storage: HashMap<String, Box<dyn GraphqlRequestHandler + Send + Sync>>,
+}
+
+impl HandlerStorage {
+    pub fn new() -> Self {
+        let storage = HashMap::new();
+        Self { storage }
+    }
+    pub fn get_handler(
+        &self,
+        key: String,
+    ) -> Option<&Box<dyn GraphqlRequestHandler + Send + Sync>> {
+        self.storage.get(&key)
+    }
+    pub fn has_handler(&self, key: String) -> bool {
+        self.storage.contains_key(&key)
+    }
+    pub fn show_keys(&self) -> Vec<&String> {
+        self.storage.keys().collect()
+    }
+    pub fn add_handler(&mut self, handler: Box<dyn GraphqlRequestHandler + Send + Sync>) {
+        self.storage.insert(handler.id(), handler);
+    }
+    pub fn remove_handler(&mut self, key: String) {
+        self.storage.remove(&key);
+    }
 }

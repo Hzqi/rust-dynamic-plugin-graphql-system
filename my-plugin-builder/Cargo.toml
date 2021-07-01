@@ -7,6 +7,8 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4"
+my-interface = {path = "../my-interface", version = "*"}
 proc-macro2 = "1.0.27"
 quote = "1.0.9"
 syn = "1.0"
