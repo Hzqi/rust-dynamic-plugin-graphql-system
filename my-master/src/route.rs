@@ -71,7 +71,7 @@ async fn load_plugin_on_use(name: &String, lock: &RwLock<HandlerStorage>) -> Res
         Ok(())
     } else {
         if has_plugin_lib(name) {
-            println!("to load handler");
+            log::info!("to load handler {}", &name);
             let mut write_guard = lock.write().await;
             let path = format!("./libs/lib_{}.{}", name, get_lib_suffix());
             load_plugin_to_context(&path, &mut write_guard)?;
@@ -200,13 +200,13 @@ async fn graphiql_handler(
 // 定时清理context的函数，没10秒清理一次
 async fn clean_context(context: StateContext) {
     loop {
-        println!("start cleans...");
+        log::info!("start handler storage cleans...");
         {
             let mut write_guard = context.write().await;
             write_guard.remove_handler("foo".to_string());
             write_guard.remove_handler("bar".to_string());
         }
-        println!("end cleans");
+        log::info!("end handler storage cleans");
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await
     }
 }
@@ -273,7 +273,8 @@ pub async fn run() {
         .or(graphql_post_json_route)
         .or(graphql_post_graphql_route)
         .or(graphiql_route)
-        .recover(handle_rejection);
+        .recover(handle_rejection)
+        .with(warp::log("server:demo"));
 
     warp::serve(routes).run(addr).await
 }
