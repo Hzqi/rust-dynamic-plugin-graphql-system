@@ -71,6 +71,7 @@ async fn load_plugin_on_use(name: &String, lock: &RwLock<HandlerStorage>) -> Res
         Ok(())
     } else {
         if has_plugin_lib(name) {
+            println!("to load handler");
             let mut write_guard = lock.write().await;
             let path = format!("./libs/lib_{}.{}", name, get_lib_suffix());
             load_plugin_to_context(&path, &mut write_guard)?;
@@ -196,6 +197,20 @@ async fn graphiql_handler(
     Ok(html)
 }
 
+// 定时清理context的函数，没10秒清理一次
+async fn clean_context(context: StateContext) {
+    loop {
+        println!("start cleans...");
+        {
+            let mut write_guard = context.write().await;
+            write_guard.remove_handler("foo".to_string());
+            write_guard.remove_handler("bar".to_string());
+        }
+        println!("end cleans");
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await
+    }
+}
+
 pub async fn run() {
     dotenv().ok();
     pretty_env_logger::init();
@@ -203,6 +218,10 @@ pub async fn run() {
     let addr: SocketAddr = server_addr.parse().expect("unable to parse socket address");
 
     let ctx = Arc::new(RwLock::new(HandlerStorage::new()));
+
+    // 定时清理context
+    let con_ctx = ctx.clone();
+    tokio::spawn(async move { clean_context(con_ctx.clone()).await });
 
     let home = warp::path::end().map(|| "it works");
 
