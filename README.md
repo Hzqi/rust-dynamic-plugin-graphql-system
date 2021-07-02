@@ -16,3 +16,14 @@ http接口如下：
   * 其中`:flag`是用于区分同一种graphql接口中的不同数据范畴，如同一个数据在`flag = false`的数据: `localhost:8080/api/:name/graphql/false` (主要是用于验证并模拟在不同环境下的接口操作，如`master`、`dev`)
   * 本demo的name仅有`foo`、`bar`。当插件包已经编译，但是未加载到context中时，会自动加载，不需要手动触发
 * `GET localhost:8080/api/:name/graphiql/:flag` Graphiql客户端页面，接口处理逻辑与graphql的一样
+
+
+
+## Documentation
+
+详细说明本demo的各个模块的实现，主要分为两个部分：动态Graphql接口处理器、动态编译插件。
+
+### 动态Graphql接口处理器
+
+依赖包`juniper_warp`中其实有提供到生成直接使用的warp filter，但是这个生成的filter是静态的，绑定到了route上，而无法做到动态替换。 所以结局方式是
+

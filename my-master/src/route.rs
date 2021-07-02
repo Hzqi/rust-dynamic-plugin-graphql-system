@@ -5,12 +5,12 @@ use libloading::Library;
 use my_interface::{data_context_extractor, get_lib_suffix, DataContext, GraphqlRequestHandler};
 use my_plugin_builder::{build_plugin, demo};
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr, path::Path, sync::Arc};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use warp::{body, http, query, reject, Filter, Rejection, Reply};
 
 use crate::{handle_rejection, Error, HandlerStorage};
 
-type StateContext = Arc<Mutex<HandlerStorage>>;
+type StateContext = Arc<RwLock<HandlerStorage>>;
 
 /// 注入状态上下文context
 fn with_context(
@@ -28,7 +28,7 @@ fn has_plugin_lib(name: &String) -> bool {
 // 加载插件
 fn load_plugin_to_context(
     path: &String,
-    guard: &mut MutexGuard<HandlerStorage>,
+    guard: &mut RwLockWriteGuard<HandlerStorage>,
 ) -> Result<(), Error> {
     let lib = Library::new(path).map_err(|e| -> Error {
         log::error!("{}", e);
@@ -59,13 +59,21 @@ fn create_and_build_plugin(name: &String) -> Result<(), Error> {
 }
 
 // 在使用时判断载入context
-fn load_plugin_on_use(name: &String, guard: &mut MutexGuard<HandlerStorage>) -> Result<(), Error> {
-    if guard.has_handler(name.to_owned()) {
+async fn load_plugin_on_use(name: &String, lock: &RwLock<HandlerStorage>) -> Result<(), Error> {
+    let has_handler = {
+        //这里需要注意！读写锁不能同时存在，这里读锁仅为了判断是否存在handler
+        //所以读完就要清理读锁
+        //放入block中，离开block就自动清理读锁
+        let read_guard = lock.read().await;
+        read_guard.has_handler(name.to_owned())
+    };
+    if has_handler {
         Ok(())
     } else {
         if has_plugin_lib(name) {
+            let mut write_guard = lock.write().await;
             let path = format!("./libs/lib_{}.{}", name, get_lib_suffix());
-            load_plugin_to_context(&path, guard)?;
+            load_plugin_to_context(&path, &mut write_guard)?;
             Ok(())
         } else {
             Err(Error::NoSuchPluginError)
@@ -83,19 +91,24 @@ async fn contro_context_handle(
     handler_key: String,
     context: StateContext,
 ) -> Result<impl Reply, Rejection> {
-    let mut guard = context.lock().await;
     if add_or_remove == "add" {
-        if guard.has_handler(handler_key.clone()) {
+        let has_handler = {
+            let read_guard = context.read().await;
+            read_guard.has_handler(handler_key.clone())
+        };
+        if has_handler {
             Ok(warp::reply::json(&"already has handler"))
         } else if has_plugin_lib(&handler_key) {
+            let mut write_guard = context.write().await;
             let path = format!("./libs/lib_{}.{}", &handler_key, get_lib_suffix());
-            load_plugin_to_context(&path, &mut guard).map_err(|e| warp::reject::custom(e))?;
+            load_plugin_to_context(&path, &mut write_guard).map_err(|e| warp::reject::custom(e))?;
             Ok(warp::reply::json(&"ok"))
         } else {
             Err(warp::reject::custom(Error::NoSuchPluginError))
         }
     } else if add_or_remove == "remove" {
-        guard.remove_handler(handler_key.to_string());
+        let mut write_guard = context.write().await;
+        write_guard.remove_handler(handler_key.to_string());
         Ok(warp::reply::json(&"ok"))
     } else {
         Err(reject())
@@ -109,12 +122,14 @@ async fn graphql_get_handler(
     data_context: DataContext,
     qry: HashMap<String, String>,
 ) -> Result<impl Reply, Rejection> {
-    let mut guard = context.lock().await;
     let mut dc = data_context;
     dc.flag(flag);
 
-    load_plugin_on_use(&key, &mut guard).map_err(|e| warp::reject::custom(e))?;
-    guard
+    load_plugin_on_use(&key, &context)
+        .await
+        .map_err(|e| warp::reject::custom(e))?;
+    let read_guard = context.read().await;
+    read_guard
         .get_handler(key)
         .unwrap()
         .get_request_handle(dc, qry)
@@ -128,12 +143,14 @@ async fn graphql_post_json_handler(
     data_context: DataContext,
     req: GraphQLBatchRequest<DefaultScalarValue>,
 ) -> Result<impl Reply, Rejection> {
-    let mut guard = context.lock().await;
     let mut dc = data_context;
     dc.flag(flag);
 
-    load_plugin_on_use(&key, &mut guard).map_err(|e| warp::reject::custom(e))?;
-    guard
+    load_plugin_on_use(&key, &context)
+        .await
+        .map_err(|e| warp::reject::custom(e))?;
+    let read_guard = context.read().await;
+    read_guard
         .get_handler(key)
         .unwrap()
         .post_json_request_handle(dc, req)
@@ -147,12 +164,14 @@ async fn graphql_post_graphql_handler(
     data_context: DataContext,
     body: Bytes,
 ) -> Result<impl Reply, Rejection> {
-    let mut guard = context.lock().await;
     let mut dc = data_context;
     dc.flag(flag);
 
-    load_plugin_on_use(&key, &mut guard).map_err(|e| warp::reject::custom(e))?;
-    guard
+    load_plugin_on_use(&key, &context)
+        .await
+        .map_err(|e| warp::reject::custom(e))?;
+    let read_guard = context.read().await;
+    read_guard
         .get_handler(key)
         .unwrap()
         .post_grqphql_request_handle(dc, body)
@@ -164,9 +183,9 @@ async fn graphiql_handler(
     flag: bool,
     context: StateContext,
 ) -> Result<impl Reply, Rejection> {
-    let mut guard = context.lock().await;
-
-    load_plugin_on_use(&key, &mut guard).map_err(|e| warp::reject::custom(e))?;
+    load_plugin_on_use(&key, &context)
+        .await
+        .map_err(|e| warp::reject::custom(e))?;
     let graphql_url = format!("/api/{}/graphql/{}", key, flag);
     let html_body =
         juniper::http::graphiql::graphiql_source(graphql_url.as_str(), None).into_bytes();
@@ -183,7 +202,7 @@ pub async fn run() {
     let server_addr = std::env::var("SERVER_ADDR").expect("missing env variable");
     let addr: SocketAddr = server_addr.parse().expect("unable to parse socket address");
 
-    let ctx = Arc::new(Mutex::new(HandlerStorage::new()));
+    let ctx = Arc::new(RwLock::new(HandlerStorage::new()));
 
     let home = warp::path::end().map(|| "it works");
 

@@ -48,11 +48,11 @@ pub fn create_cargo_toml(name: &String) -> Result<(), BuildError> {
     my-interface = {interface_dep}
     anyhow = "1.0"
     async-trait = "0.1"
-    bytes = "0.5.6"
+    bytes = "1.0.1"
     dyn-clone = "1.0.4"
     juniper = {juniper_dep}
     juniper_warp = "0.6.4"
-    warp = "0.2"
+    warp = "0.3"
     serde = "1.0"
     serde_json = "1.0"
     
